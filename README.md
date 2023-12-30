@@ -21,7 +21,6 @@ Tips:
   * Set global automation to _READ_ to save current song snapshot
   * Set global automation to other value than _READ_ to save snapshots from mixer state
   * If params are not writing make sure they have a different current value from the snapshots
-  * Use time selections to write transitions into playlist
 
 ## Keyboard splitter
 
