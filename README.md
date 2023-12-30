@@ -9,7 +9,7 @@ Reaper snapshots plugin
 Snapshooter allows to create param snapshots and recall or write them to the playlist creating patch morphs.
 Different from SWS snapshots, only the params changed are written to the playlist as automation points.
 
-Features:
+#### Features:
   * Stores and retrieves FX params
   * Stores and retrieves mixer states for track Volume, Pan, Mute and Sends
   * Writes only changed params by diffing the current state and selected snapshot
