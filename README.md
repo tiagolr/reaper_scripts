@@ -2,12 +2,10 @@ The following effects are published and available on ReaPack
 
 ## Snapshooter
 
-Reaper snapshots plugin
-
-![](doc/snapshooter.gif)
-
 Snapshooter allows to create param snapshots and recall or write them to the playlist creating patch morphs.
 Different from SWS snapshots, only the params changed are written to the playlist as automation points.
+
+![](doc/snapshooter.gif)
 
 #### Features:
   * Stores and retrieves FX params
