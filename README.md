@@ -16,12 +16,6 @@ Features:
   * Transition snapshots using tween and ease functions
   * Writes transitions into time selection from current state to snapshot
 
-Tips:
-  * Use time selection to write transitions from current state to snapshot
-  * Set global automation to _READ_ to save current song snapshot
-  * Set global automation to other value than _READ_ to save snapshots from mixer state
-  * If params are not writing make sure they have a different current value from the snapshots
-
 ## Keyboard splitter
 
 Manage tracks keyboard splitting using a visual keymap.
