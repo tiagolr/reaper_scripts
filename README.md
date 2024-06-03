@@ -15,10 +15,10 @@ Different from SWS snapshots, only the params changed are written to the playlis
   * Writes transitions into time selection from current state to snapshot
 
 #### Tips:
-
-  * Grab time selections and click **write** to write full transitions into timeline
-  * Set global automation to READ to save current song snapshot
-  * Set global automation to other value than READ to save snapshots from mixer state
+  * Grab time selections and click write to write transitions into timeline
+  * Set global automation to READ to write snapshot from current state
+  * Use global automation BYPASS to write transitions when automation already exists on the playlist
+  * Snapshots can be written directly into cursor when there is no time selection
   * If params are not writing make sure they have a different current value from the snapshot
 
 ## Keyboard splitter
