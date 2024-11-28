@@ -71,11 +71,12 @@ function makesnap()
   for i = 0, numtracks - 1 do
     -- vol,send,mute
     local tr = reaper.GetTrack(0, i)
+    local guid = reaper.GetTrackGUID(tr)
     local ret, vol, pan = reaper.GetTrackUIVolPan(tr)
     local ret, mute = reaper.GetTrackUIMute(tr)
-    table.insert(entries, { tr, 'Volume', vol })
-    table.insert(entries, { tr, 'Pan', pan })
-    table.insert(entries, { tr, 'Mute', mute and 1 or 0 })
+    table.insert(entries, { guid, 'Volume', vol })
+    table.insert(entries, { guid, 'Pan', pan })
+    table.insert(entries, { guid, 'Mute', mute and 1 or 0 })
     -- sends
     local sendcount = {} -- aux send counter
     for send = 0, reaper.GetTrackNumSends(tr, 0) do
@@ -85,7 +86,7 @@ function makesnap()
       local ret, smute = reaper.GetTrackSendUIMute(tr, send)
       key = tostring(src)..tostring(dst)
       count = sendcount[key] and sendcount[key] + 1 or 1
-      table.insert(entries, { tr, 'Send', count, key, svol, span, smute and 1 or 0 })
+      table.insert(entries, { guid, 'Send', count, key, svol, span, smute and 1 or 0 })
       sendcount[key] = count
     end
     -- fx params
@@ -95,7 +96,7 @@ function makesnap()
       paramcount = reaper.TrackFX_GetNumParams(tr, j)
       for k = 0, paramcount - 1 do
         param = reaper.TrackFX_GetParam(tr, j, k)
-        table.insert(entries, { tr, fxid , k, param })
+        table.insert(entries, { guid, fxid , k, param })
       end
     end
   end
@@ -192,7 +193,7 @@ function applydiff(diff, write, tween)
   -- tracks hashmap
   local tracks = {}
   for i = 0, numtracks - 1 do
-    tracks[tostring(reaper.GetTrack(0, i))] = i
+    tracks[reaper.GetTrackGUID(reaper.GetTrack(0, i))] = i
   end
   -- fxs hashmap
   local fxs = {}
@@ -220,7 +221,7 @@ function applydiff(diff, write, tween)
 
   -- apply diff lines
   for i,line in ipairs(diff) do
-    tr = tracks[tostring(line[1])]
+    tr = tracks[line[1]]
     if tr ~= nil then
       local track = reaper.GetTrack(0, tr)
       if not globals.ui_checkbox_seltracks or reaper.IsTrackSelected(track) then
@@ -348,7 +349,7 @@ function clearEnvelopesAndAddStartingPoint(diff, starttime, endtime)
   local tracks = {}
   local numtracks = reaper.GetNumTracks()
   for i = 0, numtracks - 1 do
-    tracks[tostring(reaper.GetTrack(0, i))] = i
+    tracks[reaper.GetTrackGUID(reaper.GetTrack(0, i))] = i
   end
   -- fxs hashmap
   local fxs = {}
@@ -361,7 +362,7 @@ function clearEnvelopesAndAddStartingPoint(diff, starttime, endtime)
   end
 
   for i,line in ipairs(diff) do
-    local track = tracks[tostring(line[1])]
+    local track = tracks[line[1]]
     if track ~= null then
       track = reaper.GetTrack(0, track)
       local env_count = reaper.CountTrackEnvelopes(track)
