@@ -737,8 +737,8 @@ function ui_start()
   local sep = package.config:sub(1, 1)
   local script_folder = debug.getinfo(1).source:match("@?(.*[\\|/])")
   local rtk = dofile(script_folder .. 'tilr_Snapshooter' .. sep .. 'rtk.lua')
-  local scale = rtk.scale.value
-  local window = rtk.Window{ w=470*scale, h=618*scale, title='Snapshooter'}
+  local scale = rtk.scale.system
+  local window = rtk.Window{ w=470*scale, h=618*scale, title='Snapshooter', bg=0x333333}
   window.onmove = function (self)
     reaper.SetProjExtState(0, 'snapshooter', 'win_x', self.x)
     reaper.SetProjExtState(0, 'snapshooter', 'win_y', self.y)
@@ -984,7 +984,7 @@ function ui_start()
   row = box:add(rtk.HBox{tmargin=10})
   ui_morphA = row:add(rtk.Button{circular=true})
   row:add(rtk.Text{'A', lmargin=-14, rmargin=14})
-  ui_morph_slider = row:add(rtk.Slider{tmargin=4, lmargin=10, rmargin=15})
+  ui_morph_slider = row:add(rtk.Slider{tmargin=4, lmargin=10, rmargin=15, w=0.93})
   ui_morphB = row:add(rtk.Button{circular=true})
   row:add(rtk.Text{'B', lmargin=-14, rmargin=14})
 
