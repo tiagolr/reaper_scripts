@@ -91,7 +91,7 @@ function FlipVertical()
   reaper.MIDI_Sort(take)
 end
 
-function Split()
+function Split(double)
   local take = GetPianoRollTake()
   if not take then return end
 
@@ -180,6 +180,9 @@ function Split()
       local finish = r[#r].finish
       local span = finish - start
       local slices = #r + 1
+      if double then
+        slices = #r * 2
+      end
       local step = span / slices
 
       for i = 0, slices-1 do
@@ -201,7 +204,7 @@ function Split()
   reaper.MIDI_Sort(take)
 end
 
-function Glue()
+function Glue(halve)
   local take = GetPianoRollTake()
   if not take then return end
   local _, noteCount = reaper.MIDI_CountEvts(take)
@@ -275,15 +278,20 @@ function Glue()
       local muted = r[1].muted
 
       local numNotes = #r
-      if numNotes <= 1 then goto continue end  -- nothing to glue
+      local newNum
+
+      if halve then
+        newNum = math.max(1, math.floor(numNotes/2))
+      else
+        newNum = math.max(1, numNotes - 1)
+      end
 
       -- insert numNotes-1 evenly spaced notes
-      local step = (finish - start) / (numNotes - 1)
-      for i = 0, numNotes-2 do
+      local step = (finish - start) / newNum
+      for i = 0, newNum-1 do
         local s = start + step*i
         local e = start + step*(i+1)
-        reaper.MIDI_InsertNote(take, true, muted,
-          s, e, chan, pitch, vel, true)
+        reaper.MIDI_InsertNote(take, true, muted, s, e, chan, pitch, vel, true)
       end
 
       ::continue::
@@ -311,12 +319,12 @@ local function CountSelectedNotes()
 end
 
 if not reaper.ImGui_GetBuiltinPath then
-  return reaper.MB('ReaImGui is not installed or too old. Install via Reapack.', 'High Roller', 0)
+  return reaper.MB('ReaImGui is not installed or too old. Install via Reapack.', 'HighRoller - MIDI Tool', 0)
 end
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.10'
-local ctx = ImGui.CreateContext('High Roller')
+local ctx = ImGui.CreateContext('HighRoller - MIDI Tool')
 
 local function myWindow()
   local selected = CountSelectedNotes()
@@ -335,13 +343,23 @@ local function myWindow()
     end
 
     if ImGui.Button(ctx, 'Split', 100) then
-      Split()
+      Split(false)
     end
 
     ImGui.SameLine(ctx)
 
     if ImGui.Button(ctx, 'Glue', 100) then
-      Glue()
+      Glue(false)
+    end
+
+    if ImGui.Button(ctx, 'Split x2', 100) then
+      Split(true)
+    end
+
+    ImGui.SameLine(ctx)
+
+    if ImGui.Button(ctx, 'Glue :2', 100) then
+      Glue(true)
     end
 
   ImGui.EndDisabled(ctx)
@@ -349,7 +367,7 @@ end
 
 local function loop()
   ImGui.SetNextWindowSize(ctx, 230, 200, ImGui.Cond_Always)
-  local visible, open = ImGui.Begin(ctx, 'High Roller', true)
+  local visible, open = ImGui.Begin(ctx, 'High Roller - MIDI Tool', true)
   if visible then
     myWindow()
     ImGui.End(ctx)
