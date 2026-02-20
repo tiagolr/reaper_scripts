@@ -117,7 +117,8 @@ local function RefreshNotes()
   if currentHash ~= selnoteshash then
     backupnotes = BackupNotes(currentNotes)
     backupnoteshash = currentHash
-    sliderGate = 1
+    sliderGate = 0
+    sliderGateInc = 0
   end
 
   selnotescount = 0
@@ -421,12 +422,42 @@ function Glue(halve)
   reaper.MIDI_Sort(take)
 end
 
+local function MapValue(value, min, max, tension)
+  local t = (value - min) / (max - min)
+  t = math.max(0, math.min(1, t))
+  t = t ^ (2 ^ (-tension * 4))
+  return t
+end
+
 local function ApplyGate(notes)
-  if sliderGate == 1 then return end
+  if sliderGate == 0 and sliderGateInc == 0 then
+    return
+  end
+
+  local gateMult = 1 + sliderGate
+  if gateMult > 1 then
+    gateMult = gateMult * gateMult
+  end
+
+  local incMult = sliderGateInc
+  if incMult > 0 then
+    incMult = incMult * 4
+  end
+
+  -- find global span
+  local firstStart = math.huge
+  local lastStart = -math.huge
 
   for _, note in ipairs(notes) do
+    firstStart = math.min(firstStart, note.start)
+    lastStart = math.max(lastStart, note.start)
+  end
+
+  -- apply gate + increment
+  for _, note in ipairs(notes) do
     local duration = note.finish - note.start
-    duration = duration * sliderGate
+    local ramp = 1 + incMult * MapValue(note.start, firstStart, lastStart, sliderGateTen)
+    duration = duration * gateMult * ramp
     duration = math.max(1, duration)
     note.finish = note.start + duration
   end
@@ -518,8 +549,21 @@ local function myWindow()
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, 'Glue :2', 100) then Glue(true) end
 
+    ImGui.PushItemWidth(ctx, 210)
     local changed
-    changed, sliderGate = ImGui.SliderDouble(ctx, "Gate %", sliderGate, 0, 2, "%.2f")
+    changed, sliderGate = ImGui.SliderDouble(ctx, "##Gate", sliderGate, -1, 1, "Gate %.2f")
+    if changed then
+      ApplyChanges()
+    end
+
+    changed, sliderGateInc = ImGui.SliderDouble(ctx, "##Gate Inc", sliderGateInc, -1, 1, "Gate Inc %.2f")
+    if changed then
+      ApplyChanges()
+    end
+
+    ImGui.SameLine(ctx)
+    ImGui.PushItemWidth(ctx, 80)
+    changed, sliderGateTen = ImGui.SliderDouble(ctx, "##Gate Tension", sliderGateTen, -1, 1, "Tension %.2f")
     if changed then
       ApplyChanges()
     end
@@ -528,8 +572,8 @@ local function myWindow()
 end
 
 local function loop()
-  ImGui.SetNextWindowSize(ctx, 230, 200, ImGui.Cond_Always)
-  local visible, open = ImGui.Begin(ctx, 'High Roller - MIDI Tool', true)
+  ImGui.SetNextWindowSize(ctx, 315, 200, ImGui.Cond_Always)
+  local visible, open = ImGui.Begin(ctx, 'High Roller - MIDI Tool', true, ImGui.WindowFlags_NoResize)
   if visible then
     myWindow()
     ImGui.End(ctx)
