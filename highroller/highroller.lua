@@ -16,6 +16,126 @@ local function GetPianoRollTake()
   return take
 end
 
+local function Hash(str)
+  local hash = 2166136261
+  for i = 1, #str do
+    hash = hash ~ string.byte(str, i)
+    hash = (hash * 16777619) & 0xffffffff
+  end
+  return hash   -- return NUMBER, not hex string
+end
+
+-- current MIDI selected notes + hash
+local selnotes = {}
+local selnotescount = 0
+local selnoteshash = 0
+
+-- modifications using sliders are applied to the original notes
+-- keep track of the original notes before modifications
+local backupnotes = {}
+local backupnoteshash = 0
+
+-- variables for slider modifications
+local sliderGate = 1
+local sliderGateInc = 0
+local sliderGateTen = 0
+
+function GetNotesHash(notes)
+  local xor_acc = 0
+  local sum_acc = 0
+  local count = 0
+
+  for _, n in pairs(notes) do
+    local h = n.hash
+    xor_acc = xor_acc ~ h
+    sum_acc = (sum_acc + h) & 0xffffffff
+    count = count + 1
+  end
+
+  local final = xor_acc ~ ((sum_acc << 1) & 0xffffffff) ~ count
+  return final
+end
+
+local function GetNotes()
+  local notes = {}
+
+  local take = GetPianoRollTake()
+  if not take then return notes end
+  local _, noteCount = reaper.MIDI_CountEvts(take)
+
+  for i = 0, noteCount-1 do
+    local ok, sel, muted, startppq, endppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
+
+    if sel then
+      local hash = Hash(table.concat({
+        startppq,
+        endppq,
+        pitch,
+        chan,
+        vel,
+        muted and 1 or 0
+      }, ","))
+
+      notes[hash] = {
+        hash=hash,
+        idx=i,
+        start=startppq,
+        finish=endppq,
+        pitch=pitch,
+        chan=chan,
+        vel=vel,
+        muted=muted
+      }
+    end
+  end
+
+  return notes
+end
+
+local function BackupNotes(src)
+  local t = {}
+  for k,v in pairs(src) do
+    t[k] = {
+      hash=v.hash,
+      idx=v.idx,
+      start=v.start,
+      finish=v.finish,
+      pitch=v.pitch,
+      chan=v.chan,
+      vel=v.vel,
+      muted=v.muted
+    }
+  end
+  return t
+end
+
+-- called every frame to keep track of selected MIDI notes
+local function RefreshNotes()
+  local currentNotes = GetNotes()
+  local currentHash = GetNotesHash(currentNotes)
+
+  if currentHash ~= selnoteshash then
+    backupnotes = BackupNotes(currentNotes)
+    backupnoteshash = currentHash
+    sliderGate = 1
+  end
+
+  selnotescount = 0
+  for k,v in pairs(currentNotes) do
+    selnotescount = selnotescount + 1
+  end
+
+  selnotes = currentNotes
+  selnoteshash = currentHash
+end
+
+-- called after then plugin modifies the notes (e.g., gate)
+-- avoids backup replacement during RefreshNotes()
+local function UpdateNotes()
+  selnotes = GetNotes()
+  selnoteshash = GetNotesHash(selnotes)
+end
+
 function FlipHorizontal()
   local take = GetPianoRollTake()
   if not take then return end
@@ -301,22 +421,76 @@ function Glue(halve)
   reaper.MIDI_Sort(take)
 end
 
--- UI ----------------------------------
+local function ApplyGate(notes)
+  if sliderGate == 1 then return end
 
-local function CountSelectedNotes()
+  for _, note in ipairs(notes) do
+    local duration = note.finish - note.start
+    duration = duration * sliderGate
+    duration = math.max(1, duration)
+    note.finish = note.start + duration
+  end
+end
+
+local function RemoveOverlaps(notes)
+    for i = 1, #notes do
+        local current = notes[i]
+
+        for j = i + 1, #notes do
+            local nextNote = notes[j]
+
+            if current.pitch ~= nextNote.pitch or current.chan ~= nextNote.chan then
+                -- different pitch/channel: continue looking
+            else
+                if current.finish > nextNote.start then
+                    current.finish = nextNote.start
+                end
+                if current.finish <= nextNote.start then
+                    break
+                end
+            end
+        end
+    end
+end
+
+local function ApplyChanges()
   local take = GetPianoRollTake()
-  if not take then return 0 end
+  if not take then return end
 
-  local _, noteCount, _, _ = reaper.MIDI_CountEvts(take)
+  reaper.MIDI_DisableSort(take)
 
-  local selected = 0
-  for i = 0, noteCount-1 do
-    local _, sel = reaper.MIDI_GetNote(take, i)
-    if sel then selected = selected + 1 end
+  -- delete all selected notes
+  local indices = {}
+  for _, note in pairs(selnotes) do
+      table.insert(indices, note.idx)
+  end
+  table.sort(indices, function(a,b) return a > b end)
+  for _, idx in ipairs(indices) do
+      reaper.MIDI_DeleteNote(take, idx)
   end
 
-  return selected
+  -- prepare notes to be modified from original selected notes
+  local notesmap = BackupNotes(backupnotes)
+  local notes = {}
+  for _, v in pairs(notesmap) do
+    table.insert(notes, v)
+  end
+  table.sort(notes, function(a,b) return a.start < b.start end)
+
+  -- apply changes to original selected notes
+  ApplyGate(notes)
+  RemoveOverlaps(notes)
+
+  -- re-add modified notes
+  for _, note in ipairs(notes) do
+    reaper.MIDI_InsertNote(take, true, note.muted, note.start, note.finish, note.chan, note.pitch, note.vel, true)
+  end
+
+  reaper.MIDI_Sort(take)
+  UpdateNotes()
 end
+
+-- UI ----------------------------------
 
 if not reaper.ImGui_GetBuiltinPath then
   return reaper.MB('ReaImGui is not installed or too old. Install via Reapack.', 'HighRoller - MIDI Tool', 0)
@@ -327,39 +501,27 @@ local ImGui = require 'imgui' '0.10'
 local ctx = ImGui.CreateContext('HighRoller - MIDI Tool')
 
 local function myWindow()
-  local selected = CountSelectedNotes()
-  ImGui.Text(ctx, "Selected notes: " .. selected)
+  RefreshNotes()
+  ImGui.Text(ctx, "Selected notes: " .. selnotescount)
 
-  ImGui.BeginDisabled(ctx, selected == 0)
+  ImGui.BeginDisabled(ctx, selnotescount == 0)
 
-    if ImGui.Button(ctx, 'Flip Horizontal', 100) then
-      FlipHorizontal()
-    end
-
+    if ImGui.Button(ctx, 'Flip Horizontal', 100) then FlipHorizontal() end
     ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, 'Flip Vertical', 100) then FlipVertical() end
 
-    if ImGui.Button(ctx, 'Flip Vertical', 100) then
-      FlipVertical()
-    end
-
-    if ImGui.Button(ctx, 'Split', 100) then
-      Split(false)
-    end
-
+    if ImGui.Button(ctx, 'Split', 100) then Split(false) end
     ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, 'Glue', 100) then Glue(false) end
 
-    if ImGui.Button(ctx, 'Glue', 100) then
-      Glue(false)
-    end
-
-    if ImGui.Button(ctx, 'Split x2', 100) then
-      Split(true)
-    end
-
+    if ImGui.Button(ctx, 'Split x2', 100) then Split(true) end
     ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, 'Glue :2', 100) then Glue(true) end
 
-    if ImGui.Button(ctx, 'Glue :2', 100) then
-      Glue(true)
+    local changed
+    changed, sliderGate = ImGui.SliderDouble(ctx, "Gate %", sliderGate, 0, 2, "%.2f")
+    if changed then
+      ApplyChanges()
     end
 
   ImGui.EndDisabled(ctx)
