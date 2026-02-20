@@ -36,9 +36,11 @@ local backupnotes = {}
 local backupnoteshash = 0
 
 -- variables for slider modifications
-local sliderGate = 1
+local sliderGate = 0
 local sliderGateInc = 0
+local checkGateInv = false
 local sliderGateTen = 0
+local sliderWarp = 0
 
 function GetNotesHash(notes)
   local xor_acc = 0
@@ -119,6 +121,7 @@ local function RefreshNotes()
     backupnoteshash = currentHash
     sliderGate = 0
     sliderGateInc = 0
+    sliderWarp = 0
   end
 
   selnotescount = 0
@@ -425,7 +428,7 @@ end
 local function MapValue(value, min, max, tension)
   local t = (value - min) / (max - min)
   t = math.max(0, math.min(1, t))
-  t = t ^ (2 ^ (-tension * 4))
+  t = t ^ (2 ^ (tension * 4))
   return t
 end
 
@@ -446,22 +449,63 @@ local function ApplyGate(notes)
 
   -- find global span
   local firstStart = math.huge
-  local lastStart = -math.huge
+  local lastFinish = -math.huge
 
   for _, note in ipairs(notes) do
     firstStart = math.min(firstStart, note.start)
-    lastStart = math.max(lastStart, note.start)
+    lastFinish = math.max(lastFinish, note.finish)
   end
 
   -- apply gate + increment
+  local ten = sliderGateTen
+  if sliderGateInc > 0 then ten = ten * -1 end
+  if checkGateInv then ten = ten * -1 end
   for _, note in ipairs(notes) do
     local duration = note.finish - note.start
-    local ramp = 1 + incMult * MapValue(note.start, firstStart, lastStart, sliderGateTen)
+    local t_ramp = MapValue(note.finish, firstStart, lastFinish, ten)
+    if checkGateInv then
+      t_ramp = 1 - t_ramp
+    end
+    local ramp = 1 + incMult * t_ramp
     duration = duration * gateMult * ramp
     duration = math.max(1, duration)
     note.finish = note.start + duration
   end
 end
+
+local function ApplyWarp(notes)
+    if sliderWarp == 0 then return end
+
+    local firstStart = math.huge
+    local lastFinish = -math.huge
+    local lastStart = -math.huge
+    for _, note in ipairs(notes) do
+        firstStart = math.min(firstStart, note.start)
+        lastFinish = math.max(lastFinish, note.finish)
+        lastStart = math.max(lastStart, note.start)
+    end
+    local selLength = lastFinish - firstStart
+    if selLength == 0 then return end
+
+    for _, note in ipairs(notes) do
+        local posRel, warpedRel, newStart
+
+        if sliderWarp < 0 then
+            posRel = (note.start - firstStart) / selLength
+            warpedRel = MapValue(posRel, 0, 1, -sliderWarp)
+            newStart = firstStart + warpedRel * selLength
+        else
+            posRel = (lastStart - note.start) / selLength
+            warpedRel = MapValue(posRel, 0, 1, sliderWarp)
+            newStart = lastStart - warpedRel * selLength
+        end
+
+        local duration = note.finish - note.start
+        note.start = newStart
+        note.finish = note.start + duration
+    end
+end
+
 
 local function RemoveOverlaps(notes)
     for i = 1, #notes do
@@ -509,6 +553,8 @@ local function ApplyChanges()
   table.sort(notes, function(a,b) return a.start < b.start end)
 
   -- apply changes to original selected notes
+  ApplyWarp(notes)
+  RemoveOverlaps(notes)
   ApplyGate(notes)
   RemoveOverlaps(notes)
 
@@ -549,6 +595,10 @@ local function myWindow()
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, 'Glue :2', 100) then Glue(true) end
 
+    ImGui.Spacing(ctx)
+    ImGui.Separator(ctx)
+    ImGui.Spacing(ctx)
+
     ImGui.PushItemWidth(ctx, 210)
     local changed
     changed, sliderGate = ImGui.SliderDouble(ctx, "##Gate", sliderGate, -1, 1, "Gate %.2f")
@@ -556,7 +606,7 @@ local function myWindow()
       ApplyChanges()
     end
 
-    changed, sliderGateInc = ImGui.SliderDouble(ctx, "##Gate Inc", sliderGateInc, -1, 1, "Gate Inc %.2f")
+    changed, sliderGateInc = ImGui.SliderDouble(ctx, "##Gate Inc", sliderGateInc, -1, 1, "Gate Ramp %.2f")
     if changed then
       ApplyChanges()
     end
@@ -567,16 +617,31 @@ local function myWindow()
     if changed then
       ApplyChanges()
     end
+    ImGui.SameLine(ctx)
+    changed, checkGateInv = ImGui.Checkbox(ctx, "Inv", checkGateInv)
+    if changed then
+      ApplyChanges()
+    end
+
+    ImGui.PushItemWidth(ctx, 210)
+    changed, sliderWarp = ImGui.SliderDouble(ctx, "##Warp", sliderWarp, -1, 1, "Warp %.2f")
+    if changed then
+      ApplyChanges()
+    end
 
   ImGui.EndDisabled(ctx)
 end
 
 local function loop()
-  ImGui.SetNextWindowSize(ctx, 315, 200, ImGui.Cond_Always)
-  local visible, open = ImGui.Begin(ctx, 'High Roller - MIDI Tool', true, ImGui.WindowFlags_NoResize)
+  ImGui.SetNextWindowSize(ctx, 365, 250, ImGui.Cond_Always)
+  local visible, open = ImGui.Begin(ctx, 'HighRoller - MIDI Tool', true, ImGui.WindowFlags_NoResize | ImGui.PopupFlags_None)
   if visible then
     myWindow()
     ImGui.End(ctx)
+  end
+
+  if ImGui.GetKeyDownDuration(ctx, ImGui.Key_Escape) >= 0 then
+    open = false
   end
 
   if open then
