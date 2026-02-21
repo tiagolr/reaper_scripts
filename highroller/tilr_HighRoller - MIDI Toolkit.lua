@@ -798,7 +798,7 @@ end
 
 local function loop()
   ImGui.SetNextWindowSize(ctx, 365, 270, ImGui.Cond_Always)
-  local visible, open = ImGui.Begin(ctx, 'HighRoller - MIDI Tool', true, ImGui.WindowFlags_NoResize | ImGui.PopupFlags_None)
+  local visible, open = ImGui.Begin(ctx, 'HighRoller - MIDI Toolkit', true, ImGui.WindowFlags_NoResize | ImGui.PopupFlags_None)
   if visible then
     myWindow()
     ImGui.End(ctx)

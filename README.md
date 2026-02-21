@@ -21,6 +21,33 @@ Different from SWS snapshots, only the params changed are written to the playlis
   * Snapshots can be written directly into cursor when there is no time selection
   * If params are not writing make sure they have a different current value from the snapshot
 
+
+## HighRoller - MIDI Toolkit
+
+A set of tools to manipulate midi notes.
+Useful to create snare or hat rolls for risers or trap beats or manipulate midi in general.
+
+Comes with scripts to execute the MIDI tools using shortcuts, also works in the inline MIDI editor.
+
+Requires ReaImGui installed.
+
+![](doc/highroller.gif)
+
+#### Tools:
+
+* Flip Horizontal - flips selected notes horizontally
+* Flip Vertical - flips selected notes vertically
+* Rotate Left - Rotates selected notes left by grid division
+* Rotate Right - Rotates selected notes right by grid division
+* Split - Adds a subdivision to notes and spaces splits equally
+* Glue - Removes a subdivision from consecutive notes
+* Split x2 - Adds two subdivisions to each note
+* Glue :2 - Removes two subdivisions from consecutive notes
+* Gate - Increase or decrease notes length proportionally to their original length
+* Gate Ramp - Progressively increment or decrement notes length
+* Warp - Bend notes start time towards the first or last note
+* Vel Ramp - Progressively increment or decrement notes velocity
+
 ## Keyboard splitter
 
 Manage tracks keyboard splitting using a visual keymap.
