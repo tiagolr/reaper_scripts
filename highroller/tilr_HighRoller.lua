@@ -10,10 +10,29 @@ end
 
 local function GetPianoRollTake()
   local editor = reaper.MIDIEditor_GetActive()
-  if not editor then return nil end
-  local take = reaper.MIDIEditor_GetTake(editor)
-  if not take or not reaper.TakeIsMIDI(take) then return nil end
-  return take
+  if editor then
+    local take = reaper.MIDIEditor_GetTake(editor)
+    if take and reaper.TakeIsMIDI(take) then
+      return take
+    end
+  end
+  local item = reaper.GetSelectedMediaItem(0, 0)
+  if item then
+    local take = reaper.GetActiveTake(item)
+    if take and reaper.TakeIsMIDI(take) then
+      return take
+    end
+  end
+  return nil
+end
+
+function GetMidiGridPPQ(take)
+    local time = reaper.GetCursorPosition()
+    local gridQN = reaper.MIDI_GetGrid(take)
+    local qn = reaper.TimeMap2_timeToQN(0, time)
+    local ppq1 = reaper.MIDI_GetPPQPosFromProjQN(take, qn)
+    local ppq2 = reaper.MIDI_GetPPQPosFromProjQN(take, qn + gridQN)
+    return ppq2 - ppq1
 end
 
 local function Hash(str)
@@ -41,6 +60,9 @@ local sliderGateInc = 0
 local checkGateInv = false
 local sliderGateTen = 0
 local sliderWarp = 0
+local sliderVelInc = 0
+local sliderVelTen = 0
+local checkVelInv = false
 
 function GetNotesHash(notes)
   local xor_acc = 0
@@ -122,6 +144,7 @@ local function RefreshNotes()
     sliderGate = 0
     sliderGateInc = 0
     sliderWarp = 0
+    sliderVelInc = 0
   end
 
   selnotescount = 0
@@ -328,6 +351,95 @@ function Split(double)
   reaper.MIDI_Sort(take)
 end
 
+function Rotate(left)
+  local take = GetPianoRollTake()
+  if not take then return end
+
+  local grid = GetMidiGridPPQ(take)
+  if left then grid = -grid end
+
+  local notes = GetNotes()
+  if not notes or next(notes) == nil then return end
+
+  -- find global span (start positions only)
+  local minStart = math.huge
+  local maxStart = -math.huge
+
+
+  for _, note in pairs(notes) do
+    if note.start < minStart then minStart = note.start end
+    if note.start > maxStart then maxStart = note.start end
+  end
+
+  local span = (maxStart - minStart) + math.abs(grid)
+
+  -- try to recall last used rotation boundaries
+  -- because consecutive rotations should use the same boundaries
+  -- also this function can be called from an Action
+  -- so the boundaries and notes hash are persisted within the project
+  local _, rothash = reaper.GetProjExtState(0, 'highroller', 'rothash')
+  if tonumber(rothash) == GetNotesHash(notes) then
+    local _, rotspan = reaper.GetProjExtState(0, 'highroller', 'rotspan')
+    local _, rotminstart = reaper.GetProjExtState(0, 'highroller', 'rotminstart')
+    local _, rotmaxstart = reaper.GetProjExtState(0, 'highroller', 'rotmaxstart')
+    local nrotspan = tonumber(rotspan)
+    local nrotminstart = tonumber(rotminstart)
+    local nrotmaxstart = tonumber(rotmaxstart)
+    if nrotspan ~= nil and nrotminstart ~= nil and nrotmaxstart ~= nil then
+      span = nrotspan
+      minStart = nrotminstart
+      maxStart = nrotmaxstart
+    end
+  end
+
+  -- rotate positions
+  for _, note in pairs(notes) do
+    local duration = note.finish - note.start
+    local newStart = note.start + grid
+
+    -- wrap left
+    if newStart < minStart then
+      newStart = newStart + span
+    end
+
+    -- wrap right
+    if newStart > maxStart then
+      newStart = newStart - span
+    end
+
+    note.start  = newStart
+    note.finish = newStart + duration
+  end
+
+  -- write notes back to take
+  reaper.MIDI_DisableSort(take)
+
+  for _, note in pairs(notes) do
+    reaper.MIDI_SetNote(
+      take,
+      note.idx,
+      nil,
+      nil,
+      note.start,
+      note.finish,
+      nil,
+      nil,
+      nil,
+      false
+    )
+  end
+
+  reaper.MIDI_Sort(take)
+  reaper.UpdateArrange()
+  notes = GetNotes()
+
+  -- finally persist last notes hash such that rotate reuses the rotation boundaries on repeat
+  reaper.SetProjExtState(0, "highroller", "rothash", GetNotesHash(notes))
+  reaper.SetProjExtState(0, "highroller", "rotspan", span)
+  reaper.SetProjExtState(0, "highroller", "rotminstart", minStart)
+  reaper.SetProjExtState(0, "highroller", "rotmaxstart", maxStart)
+end
+
 function Glue(halve)
   local take = GetPianoRollTake()
   if not take then return end
@@ -506,6 +618,41 @@ local function ApplyWarp(notes)
     end
 end
 
+local function ApplyVelocity(notes)
+  if sliderVelInc == 0 then
+    return
+  end
+
+  local incMult = sliderVelInc
+  if incMult > 0 then
+    incMult = incMult * 4
+  end
+
+  -- find global span
+  local firstStart = math.huge
+  local lastStart = -math.huge
+
+  for _, note in ipairs(notes) do
+    firstStart = math.min(firstStart, note.start)
+    lastStart = math.max(lastStart, note.start)
+  end
+
+  -- apply velocity increment
+  local ten = sliderVelTen
+  if sliderVelInc > 0 then ten = ten * -1 end
+  if checkVelInv then ten = ten * -1 end
+  for _, note in ipairs(notes) do
+    local vel = note.vel / 127
+    local t_ramp = MapValue(note.start, firstStart, lastStart, ten)
+    if checkVelInv then
+      t_ramp = 1 - t_ramp
+    end
+    local ramp = 1 + incMult * t_ramp
+    vel = vel * ramp * 127
+    vel = math.min(math.max(vel, 1), 127)
+    note.vel = math.floor(vel)
+  end
+end
 
 local function RemoveOverlaps(notes)
     for i = 1, #notes do
@@ -557,6 +704,7 @@ local function ApplyChanges()
   RemoveOverlaps(notes)
   ApplyGate(notes)
   RemoveOverlaps(notes)
+  ApplyVelocity(notes)
 
   -- re-add modified notes
   for _, note in ipairs(notes) do
@@ -586,6 +734,10 @@ local function myWindow()
     if ImGui.Button(ctx, 'Flip Horizontal', 100) then FlipHorizontal() end
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, 'Flip Vertical', 100) then FlipVertical() end
+
+    if ImGui.Button(ctx, 'Rotate Left', 100) then Rotate(true) end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, 'Rotate Right', 100) then Rotate(false) end
 
     if ImGui.Button(ctx, 'Split', 100) then Split(false) end
     ImGui.SameLine(ctx)
@@ -629,11 +781,27 @@ local function myWindow()
       ApplyChanges()
     end
 
+    changed, sliderVelInc = ImGui.SliderDouble(ctx, "##Vel Ramp", sliderVelInc, -1, 1, "Vel Ramp %.2f")
+    if changed then
+      ApplyChanges()
+    end
+    ImGui.SameLine(ctx)
+    ImGui.PushItemWidth(ctx, 80)
+    changed, sliderVelTen = ImGui.SliderDouble(ctx, "##Vel Tension", sliderVelTen, -1, 1, "Tension %.2f")
+    if changed then
+      ApplyChanges()
+    end
+    ImGui.SameLine(ctx)
+    changed, checkVelInv = ImGui.Checkbox(ctx, "Inv ", checkVelInv)
+    if changed then
+      ApplyChanges()
+    end
+
   ImGui.EndDisabled(ctx)
 end
 
 local function loop()
-  ImGui.SetNextWindowSize(ctx, 365, 250, ImGui.Cond_Always)
+  ImGui.SetNextWindowSize(ctx, 365, 270, ImGui.Cond_Always)
   local visible, open = ImGui.Begin(ctx, 'HighRoller - MIDI Tool', true, ImGui.WindowFlags_NoResize | ImGui.PopupFlags_None)
   if visible then
     myWindow()
@@ -649,4 +817,14 @@ local function loop()
   end
 end
 
-reaper.defer(loop)
+if not NO_UI then -- skip_init set from other scripts
+  reaper.defer(loop)
+end
+
+return {
+  Split = Split,
+  Glue = Glue,
+  FlipHorizontal = FlipHorizontal,
+  FlipVertical = FlipVertical,
+  Rotate = Rotate
+}
