@@ -371,26 +371,23 @@ function Rotate(left)
     if note.start > maxStart then maxStart = note.start end
   end
 
-  local span = (maxStart - minStart) + math.abs(grid)
-
-  -- try to recall last used rotation boundaries
+  -- try to recall last used rotation boundaries.
   -- because consecutive rotations should use the same boundaries
-  -- also this function can be called from an Action
-  -- so the boundaries and notes hash are persisted within the project
+  -- and because this function can be called from an Action
+  -- the boundaries and notes hash are persisted within the project
   local _, rothash = reaper.GetProjExtState(0, 'highroller', 'rothash')
   if tonumber(rothash) == GetNotesHash(notes) then
-    local _, rotspan = reaper.GetProjExtState(0, 'highroller', 'rotspan')
     local _, rotminstart = reaper.GetProjExtState(0, 'highroller', 'rotminstart')
     local _, rotmaxstart = reaper.GetProjExtState(0, 'highroller', 'rotmaxstart')
-    local nrotspan = tonumber(rotspan)
     local nrotminstart = tonumber(rotminstart)
     local nrotmaxstart = tonumber(rotmaxstart)
-    if nrotspan ~= nil and nrotminstart ~= nil and nrotmaxstart ~= nil then
-      span = nrotspan
+    if nrotminstart ~= nil and nrotmaxstart ~= nil then
       minStart = nrotminstart
       maxStart = nrotmaxstart
     end
   end
+
+  local span = (maxStart - minStart) + math.abs(grid)
 
   -- rotate positions
   for _, note in pairs(notes) do
@@ -433,9 +430,8 @@ function Rotate(left)
   reaper.UpdateArrange()
   notes = GetNotes()
 
-  -- finally persist last notes hash such that rotate reuses the rotation boundaries on repeat
+  -- persist last notes hash such that rotate reuses the rotation boundaries on repeat
   reaper.SetProjExtState(0, "highroller", "rothash", GetNotesHash(notes))
-  reaper.SetProjExtState(0, "highroller", "rotspan", span)
   reaper.SetProjExtState(0, "highroller", "rotminstart", minStart)
   reaper.SetProjExtState(0, "highroller", "rotmaxstart", maxStart)
 end
